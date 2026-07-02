@@ -1,0 +1,164 @@
+rules_version = '2';
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+    function signedIn() {
+      return request.auth != null;
+    }
+
+    function role() {
+      return signedIn() ? request.auth.token.role : null;
+    }
+
+    function isAdmin() {
+      return role() == 'superAdmin';
+    }
+
+    function isProviderStaff() {
+      return role() == 'providerStaff';
+    }
+
+    function isTechnician() {
+      return role() == 'technician';
+    }
+
+    function providerMatches(providerId) {
+      return isAdmin() ||
+        (isProviderStaff() && request.auth.token.providerId == providerId);
+    }
+
+    function ownsUser(userId) {
+      return signedIn() && request.auth.uid == userId;
+    }
+
+    function canReadComplaint(complaintId) {
+      let complaint = get(
+        /databases/$(database)/documents/complaints/$(complaintId)
+      ).data;
+      return signedIn() && (
+        complaint.userId == request.auth.uid ||
+        providerMatches(complaint.providerId) ||
+        (isTechnician() && complaint.technicianId == request.auth.uid)
+      );
+    }
+
+    match /users/{userId} {
+      allow read: if ownsUser(userId) || isAdmin();
+      allow create: if ownsUser(userId)
+        && request.resource.data.role == 'consumer'
+        && !('providerId' in request.resource.data)
+        && request.resource.data.keys().hasOnly([
+          'name',
+          'phone',
+          'email',
+          'address',
+          'role',
+          'locale',
+          'accessibility',
+          'consent',
+          'createdAt',
+          'updatedAt'
+        ]);
+      allow update: if ownsUser(userId)
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly([
+          'name',
+          'phone',
+          'email',
+          'address',
+          'locale',
+          'accessibility',
+          'consent',
+          'updatedAt'
+        ]);
+      allow delete: if false;
+
+      match /savedLocations/{locationId} {
+        allow read, write: if ownsUser(userId);
+      }
+
+      match /notificationPreferences/{preferenceId} {
+        allow read, write: if ownsUser(userId);
+      }
+
+      match /devices/{deviceId} {
+        allow read, write: if ownsUser(userId);
+      }
+    }
+
+    match /providers/{providerId} {
+      allow read: if signedIn();
+      allow write: if false;
+    }
+
+    match /areas/{areaId} {
+      allow read: if signedIn();
+      allow write: if false;
+    }
+
+    match /outages/{outageId} {
+      allow read: if signedIn();
+      allow write: if false;
+
+      match /updates/{updateId} {
+        allow read: if signedIn();
+        allow write: if false;
+      }
+
+      match /followers/{userId} {
+        allow read, write: if ownsUser(userId);
+      }
+    }
+
+    match /complaints/{complaintId} {
+      allow read: if signedIn() && (
+        resource.data.userId == request.auth.uid ||
+        providerMatches(resource.data.providerId) ||
+        (isTechnician() && resource.data.technicianId == request.auth.uid)
+      );
+      allow write: if false;
+
+      match /timeline/{eventId} {
+        allow read: if canReadComplaint(complaintId);
+        allow write: if false;
+      }
+    }
+
+    match /maintenance/{maintenanceId} {
+      allow read: if signedIn();
+      allow write: if false;
+    }
+
+    match /notifications/{notificationId} {
+      allow read: if signedIn() && (
+        resource.data.userId == request.auth.uid ||
+        resource.data.userId == null
+      );
+      allow write: if false;
+    }
+
+    match /technicians/{technicianId} {
+      allow read: if ownsUser(technicianId) ||
+        providerMatches(resource.data.providerId);
+      allow write: if false;
+    }
+
+    match /auditLogs/{logId} {
+      allow read: if isAdmin();
+      allow write: if false;
+    }
+
+    match /platformHealth/{document=**} {
+      allow read: if isAdmin();
+      allow write: if false;
+    }
+
+    match /riskPredictions/{predictionId} {
+      allow read: if providerMatches(resource.data.providerId);
+      allow write: if false;
+    }
+
+    match /{document=**} {
+      allow read, write: if false;
+    }
+  }
+}

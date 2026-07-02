@@ -1,0 +1,58 @@
+rules_version = '2';
+
+service firebase.storage {
+  match /b/{bucket}/o {
+    function signedIn() {
+      return request.auth != null;
+    }
+
+    function validMedia() {
+      return request.resource.size < 20 * 1024 * 1024
+        && request.resource.contentType.matches(
+          'image/(jpeg|png|webp)|video/mp4|audio/(mpeg|mp4|aac)'
+        );
+    }
+
+    match /complaints/{userId}/{complaintId}/{fileName} {
+      allow read: if signedIn() && (
+        request.auth.uid == userId ||
+        request.auth.token.role == 'superAdmin' ||
+        (request.auth.token.role == 'providerStaff' &&
+          firestore.get(
+            /databases/(default)/documents/complaints/$(complaintId)
+          ).data.providerId == request.auth.token.providerId) ||
+        (request.auth.token.role == 'technician' &&
+          firestore.get(
+            /databases/(default)/documents/complaints/$(complaintId)
+          ).data.technicianId == request.auth.uid)
+      );
+      allow create: if signedIn()
+        && request.auth.uid == userId
+        && validMedia();
+      allow update, delete: if false;
+    }
+
+    match /technician-jobs/{technicianId}/{complaintId}/{fileName} {
+      allow read: if signedIn() && (
+        request.auth.uid == technicianId ||
+        request.auth.token.role == 'superAdmin' ||
+        (request.auth.token.role == 'providerStaff' &&
+          firestore.get(
+            /databases/(default)/documents/complaints/$(complaintId)
+          ).data.providerId == request.auth.token.providerId)
+      );
+      allow create: if signedIn()
+        && request.auth.uid == technicianId
+        && firestore.get(
+          /databases/(default)/documents/complaints/$(complaintId)
+        ).data.technicianId == request.auth.uid
+        && request.resource.size < 10 * 1024 * 1024
+        && request.resource.contentType.matches('image/(jpeg|png|webp)');
+      allow update, delete: if false;
+    }
+
+    match /{allPaths=**} {
+      allow read, write: if false;
+    }
+  }
+}

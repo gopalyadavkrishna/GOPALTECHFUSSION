@@ -1,0 +1,29 @@
+# Flutter
+.dart_tool/
+.flutter-plugins
+.flutter-plugins-dependencies
+.packages
+build/
+coverage/
+android/.gradle/
+android/local.properties
+android/key.properties
+**/firebase_options.dart
+**/google-services.json
+
+# Node
+node_modules/
+dist/
+.env
+*.log
+
+# Tooling
+.idea/
+.vscode/
+.DS_Store
+Thumbs.db
+
+# Secrets
+*.jks
+*.keystore
+service-account*.json
